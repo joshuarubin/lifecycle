@@ -101,10 +101,10 @@ func New(opts ...Option) Manager {
 func WithContext(ctx context.Context, opts ...Option) (context.Context, Manager) {
 	h := &manager{
 		timeout:      DefaultTimeout,
-		sigs:         DefaultSignals,
 		whenSignaled: DefaultWhenSignaled,
 		deferred:     []func() error{},
 	}
+	copy(h.sigs, DefaultSignals)
 	h.ctx, h.cancel = context.WithCancel(ctx)
 	h.Group, h.gctx = errgroup.WithContext(context.Background())
 	for _, o := range opts {
