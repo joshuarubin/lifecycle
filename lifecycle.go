@@ -2,12 +2,12 @@ package lifecycle
 
 import (
 	"context"
+	"flag"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/spf13/pflag"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -46,7 +46,7 @@ type Manager interface {
 
 	// Flags returns flags that can optionally configure the
 	// manager beyond the provided functional options prior to calling .Handle
-	Flags() *pflag.FlagSet
+	Flags() *flag.FlagSet
 }
 
 // Done is used to indicate, asynchronously, when something is complete. It
