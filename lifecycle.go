@@ -185,12 +185,6 @@ func (h *manager) runDeferredGroup() (err error) {
 func (h *manager) signalReceived() chan os.Signal {
 	sigCh := make(chan os.Signal, 1)
 	if h.whenSignaled {
-		// the option WhenSignaled was used...
-		// var sigs []string
-		// for _, sig := range h.options.sigs {
-		//		sigs = append(sigs, sig.String())
-		//		}
-		// zlog.WithField("signals", strings.Join(sigs, ", ")).Debug("shutdown: waiting for signal")
 		signal.Notify(sigCh, h.sigs...)
 	}
 	return sigCh
