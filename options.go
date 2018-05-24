@@ -18,19 +18,11 @@ func WithTimeout(val time.Duration) Option {
 	}
 }
 
-// WhenSignaled causes Handle to wait for Go funcs to finish, if WhenDone was
+// WithSignals causes Handle to wait for Go funcs to finish, if WhenDone was
 // used or until a signal is received. The signals it will wait for can be
 // defined with WithSigs or will default to DefaultSignals
-func WhenSignaled(val ...os.Signal) Option {
+func WithSignals(val ...os.Signal) Option {
 	return func(o *manager) {
 		o.sigs = val
-		o.whenSignaled = true
-	}
-}
-
-// IgnoreSignals causes the Handle function to expressly ignore signals
-func IgnoreSignals() Option {
-	return func(o *manager) {
-		o.whenSignaled = false
 	}
 }

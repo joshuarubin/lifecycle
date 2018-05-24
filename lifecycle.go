@@ -11,14 +11,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const (
-	DefaultWhenSignaled = true
-	DefaultTimeout      = 30 * time.Second
-)
-
-var (
-	DefaultSignals = []os.Signal{syscall.SIGINT, syscall.SIGTERM}
-)
+var DefaultSignals = []os.Signal{syscall.SIGINT, syscall.SIGTERM}
 
 // Manager is used to manage the lifetime of an application and ensure that it
 // shuts down cleanly.
@@ -80,10 +73,8 @@ func DoneFunc(done Done) func() error {
 type manager struct {
 	*errgroup.Group
 
-	timeout      time.Duration
-	sigs         []os.Signal
-	whenSignaled bool
-	whenDone     bool
+	timeout time.Duration
+	sigs    []os.Signal
 
 	ctx      context.Context
 	cancel   func()
@@ -91,18 +82,10 @@ type manager struct {
 	deferred []func() error
 }
 
-// New returns a new system lifecycle manager with an internally managed context.
-func New(opts ...Option) Manager {
-	_, h := WithContext(context.Background(), opts...)
-	return h
-}
-
-// WithContext returns a shutdown manager with contxt dervived from that provided.
-func WithContext(ctx context.Context, opts ...Option) (context.Context, Manager) {
+// New returns a shutdown manager with contxt dervived from that provided.
+func New(ctx context.Context, opts ...Option) (context.Context, Manager) {
 	h := &manager{
-		timeout:      DefaultTimeout,
-		whenSignaled: DefaultWhenSignaled,
-		deferred:     []func() error{},
+		deferred: []func() error{},
 	}
 	copy(h.sigs, DefaultSignals)
 	h.ctx, h.cancel = context.WithCancel(ctx)
@@ -138,12 +121,12 @@ func (h *manager) Defer(deferred ...func() error) {
 //  error.  It also cancels immediately if any of the configured system signals
 // are received.  It then runs all deferred functions, returning immediately if any
 func (h *manager) Manage() (err error) {
-	if err = h.runPrimaryGroup(); err != nil {
+	err = h.runPrimaryGroup()
+	h.cancel()
+	if err != nil {
+		_ = h.runDeferredGroup()
 		return
 	}
-
-	h.cancel()
-
 	return h.runDeferredGroup()
 }
 
@@ -184,9 +167,7 @@ func (h *manager) runDeferredGroup() (err error) {
 // If not configured to receive signals, it will receive nothing.
 func (h *manager) signalReceived() chan os.Signal {
 	sigCh := make(chan os.Signal, 1)
-	if h.whenSignaled {
-		signal.Notify(sigCh, h.sigs...)
-	}
+	signal.Notify(sigCh, h.sigs...)
 	return sigCh
 }
 
