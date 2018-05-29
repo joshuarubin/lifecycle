@@ -2,7 +2,6 @@ package lifecycle
 
 import (
 	"context"
-	"flag"
 	"os"
 	"os/signal"
 	"syscall"
@@ -36,10 +35,6 @@ type Manager interface {
 	// by a function it was waiting for, or context.Canceled if the timer
 	// expires.
 	Manage() error
-
-	// Flags returns flags that can optionally configure the
-	// manager beyond the provided functional options prior to calling .Handle
-	Flags() *flag.FlagSet
 }
 
 // Done is used to indicate, asynchronously, when something is complete. It

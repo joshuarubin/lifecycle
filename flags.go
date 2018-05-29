@@ -5,9 +5,9 @@ import (
 )
 
 // Flags that will configure the handler when parsed
-func (m *manager) Flags() (f *flag.FlagSet) {
+func (m *manager) Flags(prefix string) (f *flag.FlagSet) {
 	f = flag.NewFlagSet("shutdown", flag.ContinueOnError)
-	f.DurationVar(&m.timeout, "shutdown-timeout", m.timeout,
+	f.Duration(prefix+"shutdown-timeout", m.timeout,
 		"Time to wait for routines to complete after initiating a shutdown.")
 	return
 }
