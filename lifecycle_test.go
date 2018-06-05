@@ -265,13 +265,3 @@ func TestDoneFunc(t *testing.T) {
 		t.Fatalf("async job using DoneFunc did not complete.")
 	}
 }
-
-func TestFlags(t *testing.T) {
-	// TODO: figure out how to test that parsing flags updates the manager member
-	// This test currently just tests that it returns something
-	_, h := lifecycle.New(context.Background())
-	flags := h.Flags()
-	if flags == nil {
-		t.Fatal("Flags returned nil")
-	}
-}
