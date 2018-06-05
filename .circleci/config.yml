@@ -1,0 +1,24 @@
+---
+version: 2
+
+jobs:
+  build:
+    working_directory: /go/src/zvelo.io/lifecycle
+
+    docker:
+      - image: circleci/golang:latest
+
+    steps:
+      - checkout
+      - run:
+          name: Install Test Dependencies
+          command: |
+            go get github.com/golang/dep/cmd/dep
+            go get github.com/go-playground/overalls
+            go get github.com/mattn/goveralls
+            dep ensure
+      - run:
+          name: Calculate unit test coverage
+          command: |
+            overalls -project=zvelo.io/lifecycle -covermode=count
+            goveralls -v -coverprofile=overalls.coverprofile -service circle-ci -repotoken ${COVERALLS_REPO_TOKEN} || true
