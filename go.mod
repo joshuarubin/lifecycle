@@ -1,4 +1,4 @@
-module github.com/zvelo/lifecycle
+module zvelo.io/lifecycle
 
 require (
 	golang.org/x/net v0.0.0-20180511174649-2491c5de3490
