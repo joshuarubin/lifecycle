@@ -77,7 +77,8 @@ type manager struct {
 	deferred []func() error
 }
 
-// New returns a shutdown manager with contxt dervived from that provided.
+// New returns a shutdown manager with contxt derived from that
+// provided.
 func New(ctx context.Context, opts ...Option) (context.Context, Manager) {
 	h := &manager{
 		deferred: []func() error{},
@@ -107,14 +108,17 @@ func (h *manager) Defer(deferred ...func() error) {
 
 // Manage blocks until all go routines have been completed or a
 // signal has been received.
-// Mangee blocks until all the routines registered using Go have completed
+//
+// Manage blocks until all the routines registered using Go have completed
 // (either cleanly or due to receiving an error os a signal), and then
 // waits for all the deferred functions to complete (either cleanly or due
 // to receiving a signal), with the timeout applied as the maximum time to wait
 // for the deferred functions to complete.
-// Mange runs all goroutines registered with .Go, canceling if any throw an
-//  error.  It also cancels immediately if any of the configured system signals
-// are received.  It then runs all deferred functions, returning immediately if any
+//
+// Manage runs all goroutines registered with .Go, canceling if any
+// throw an error.  It also cancels immediately if any of the
+// configured system signals are received.  It then runs all deferred
+// functions, returning immediately if any fail.
 func (h *manager) Manage() (err error) {
 	err = h.runPrimaryGroup()
 	h.cancel()
