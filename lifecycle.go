@@ -77,7 +77,7 @@ type manager struct {
 	deferred []func() error
 }
 
-// New returns a shutdown manager with contxt derived from that
+// New returns a shutdown manager with context derived from that
 // provided.
 func New(ctx context.Context, opts ...Option) (context.Context, Manager) {
 	h := &manager{
