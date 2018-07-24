@@ -28,7 +28,7 @@ func TestSingleRoutine(t *testing.T) {
 
 	// A lifecycle manager with a single registered routine should immediately execute
 	// the routine without needing to call Manage.
-	var ran int64 = 0
+	var ran int64
 	h.Go(func() error { atomic.StoreInt64(&ran, 1); return nil })
 	time.Sleep(100 * time.Millisecond)
 	if atomic.LoadInt64(&ran) != 1 {
@@ -81,7 +81,7 @@ func TestSingleDeferred(t *testing.T) {
 		t.Fatalf("unexpected error on manage: %v", err)
 	}
 	time.Sleep(100 * time.Millisecond)
-	if ran != true {
+	if !ran {
 		t.Error("lifecycle manager did not run deferred routine upon Manage.")
 	}
 }
@@ -203,13 +203,13 @@ func TestSignalCancels(t *testing.T) {
 	// A long-running goroutine, when signaled, should invoke the deferred
 	// functions and wait up to timeout before interrupting the laggard.
 
-	var deferredRan int64 = 0
+	deferredRan := int64(0)
 	h.Go(func() error { time.Sleep(1 * time.Minute); return nil })
 	h.Defer(func() error { atomic.StoreInt64(&deferredRan, 1); return nil })
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 		process, _ := os.FindProcess(syscall.Getpid())
-		process.Signal(syscall.SIGUSR1)
+		_ = process.Signal(syscall.SIGUSR1)
 	}()
 	err := h.Manage()
 	if err != context.DeadlineExceeded {
@@ -229,7 +229,7 @@ func TestIgnoreSignals(t *testing.T) {
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 		process, _ := os.FindProcess(syscall.Getpid())
-		process.Signal(syscall.SIGUSR1)
+		_ = process.Signal(syscall.SIGUSR1)
 	}()
 	err := h.Manage()
 	if err != context.DeadlineExceeded {
