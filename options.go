@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// An Option is used to configure shutdown handlers
+// An Option is used to configure the lifecycle manager
 type Option func(*manager)
 
 // WithTimeout sets an upper limit for how much time Handle will wait to return.
