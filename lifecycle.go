@@ -82,7 +82,7 @@ func New(ctx context.Context, opts ...Option) context.Context {
 	return m.ctx
 }
 
-// ErrNoManager is returned by Go(), Defer(), and Manage() if called and the
+// ErrNoManager is returned by Go(), Defer(), and Wait() if called and the
 // passed in context was not created with New()
 var ErrNoManager = fmt.Errorf("lifecycle manager not in context")
 
@@ -114,7 +114,7 @@ func Defer(ctx context.Context, deferred ...func() error) error {
 	return nil
 }
 
-// Manage blocks until all go routines have been completed.
+// Wait blocks until all go routines have been completed.
 //
 // First all goroutines registered with Go have to complete (either cleanly or
 // with an error).
@@ -128,12 +128,12 @@ func Defer(ctx context.Context, deferred ...func() error) error {
 // returned by New() is canceled.
 //
 // WithTimeout() can be used to set a maximum amount of time, from signal or
-// context cancellation, that Manage will wait before returning.
+// context cancellation, that Wait will wait before returning.
 //
 // The error returned is the first one returned by any goroutines registered
 // with Go. If none of those return an error, then the error is the first one
 // returned by a goroutine registered with Defer.
-func Manage(ctx context.Context) error {
+func Wait(ctx context.Context) error {
 	m, ok := fromContext(ctx)
 	if !ok {
 		return ErrNoManager
