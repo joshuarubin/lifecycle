@@ -34,11 +34,8 @@ type Done <-chan struct{}
 
 // DoneFunc provides a function that returns when the done channel does, for
 // use with Go and Defer.
-func DoneFunc(done Done) func() error {
-	return func() error {
-		<-done
-		return nil
-	}
+func DoneFunc(done Done) func() {
+	return func() { <-done }
 }
 
 type manager struct {
@@ -86,9 +83,31 @@ func New(ctx context.Context, opts ...Option) context.Context {
 // passed in context was not created with New()
 var ErrNoManager = fmt.Errorf("lifecycle manager not in context")
 
+func errFunc(fn func()) func() error {
+	return func() error {
+		fn()
+		return nil
+	}
+}
+
 // Go run a function in a new goroutine and the first to return in error in this
 // way cancels the group; the error retained.
-func Go(ctx context.Context, f ...func() error) error {
+func Go(ctx context.Context, f ...func()) error {
+	m, ok := fromContext(ctx)
+	if !ok {
+		return ErrNoManager
+	}
+
+	for _, fn := range f {
+		m.Group.Go(errFunc(fn))
+	}
+
+	return nil
+}
+
+// GoErr run a function in a new goroutine and the first to return in error in this
+// way cancels the group; the error retained.
+func GoErr(ctx context.Context, f ...func() error) error {
 	m, ok := fromContext(ctx)
 	if !ok {
 		return ErrNoManager
@@ -103,7 +122,22 @@ func Go(ctx context.Context, f ...func() error) error {
 
 // Defer adds funcs that should be called after the Go funcs complete (either
 // clean or with errors) or a signal is received.
-func Defer(ctx context.Context, deferred ...func() error) error {
+func Defer(ctx context.Context, deferred ...func()) error {
+	m, ok := fromContext(ctx)
+	if !ok {
+		return ErrNoManager
+	}
+
+	for _, fn := range deferred {
+		m.deferred = append(m.deferred, errFunc(fn))
+	}
+
+	return nil
+}
+
+// DeferErr adds funcs that should be called after the Go funcs complete (either
+// clean or with errors) or a signal is received.
+func DeferErr(ctx context.Context, deferred ...func() error) error {
 	m, ok := fromContext(ctx)
 	if !ok {
 		return ErrNoManager

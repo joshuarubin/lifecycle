@@ -29,7 +29,7 @@ func TestSingleRoutine(t *testing.T) {
 	// A lifecycle manager with a single registered routine should immediately execute
 	// the routine without needing to call Wait.
 	var ran int64
-	lifecycle.Go(ctx, func() error { atomic.StoreInt64(&ran, 1); return nil })
+	lifecycle.Go(ctx, func() { atomic.StoreInt64(&ran, 1) })
 	time.Sleep(100 * time.Millisecond)
 	if atomic.LoadInt64(&ran) != 1 {
 		t.Error("lifecycle manager did not immediately run registered routine.")
@@ -41,7 +41,7 @@ func TestPrimaryError(t *testing.T) {
 
 	// A manager with a single erroring registered routine should return that
 	// error on Wait
-	lifecycle.Go(ctx, func() error { return errors.New("errored") })
+	lifecycle.GoErr(ctx, func() error { return errors.New("errored") })
 	err := lifecycle.Wait(ctx)
 
 	if err == nil {
@@ -57,7 +57,7 @@ func TestMultiplePrimaryErrors(t *testing.T) {
 
 	// when multiple routines will error, the first error should be returned
 	// without waiting for the second routine to finish.
-	lifecycle.Go(ctx, func() error { return errors.New("error1") })
+	lifecycle.GoErr(ctx, func() error { return errors.New("error1") })
 	err := lifecycle.Wait(ctx)
 
 	if err == nil {
@@ -75,7 +75,7 @@ func TestSingleDeferred(t *testing.T) {
 	// execute the deferred routine on Wait. Deferred routines do not
 	// run immediately, requiring that Managebe explicitly invoked.
 	ran := false
-	lifecycle.Defer(ctx, func() error { ran = true; return nil })
+	lifecycle.Defer(ctx, func() { ran = true })
 	err := lifecycle.Wait(ctx)
 	if err != nil {
 		t.Fatalf("unexpected error on Wait: %v", err)
@@ -91,7 +91,7 @@ func TestSingleDeferredError(t *testing.T) {
 
 	// A manager with no primary routines and one deferred routine should
 	// execute the deferred routine on Wait and return its error.
-	lifecycle.Defer(ctx, func() error { return errors.New("deferred error") })
+	lifecycle.DeferErr(ctx, func() error { return errors.New("deferred error") })
 	err := lifecycle.Wait(ctx)
 	if err == nil {
 		t.Fatal("Manager with an erroring deferred expected error, but received none.")
@@ -106,8 +106,8 @@ func TestMultipleDeferredErrors(t *testing.T) {
 
 	// A manager with no primary routines and multiple deferred routines should
 	// execute the deferred routines, and return the first deferred error, not the last.
-	lifecycle.Defer(ctx, func() error { return errors.New("deferred error1") })
-	lifecycle.Defer(ctx, func() error {
+	lifecycle.DeferErr(ctx, func() error { return errors.New("deferred error1") })
+	lifecycle.DeferErr(ctx, func() error {
 		time.Sleep(500 * time.Millisecond)
 		return errors.New("deferred error2")
 	})
@@ -125,8 +125,8 @@ func TestPrimaryAndSecondary(t *testing.T) {
 
 	// A manager with both a primary and deferred routine should execute both.
 	var primaryRan, deferredRan bool
-	lifecycle.Go(ctx, func() error { primaryRan = true; return nil })
-	lifecycle.Defer(ctx, func() error { deferredRan = true; return nil })
+	lifecycle.Go(ctx, func() { primaryRan = true })
+	lifecycle.Defer(ctx, func() { deferredRan = true })
 	err := lifecycle.Wait(ctx)
 	if err != nil {
 		t.Fatalf("unexpected wait error: %v", err)
@@ -144,8 +144,8 @@ func TestDeferredOnPrimaryError(t *testing.T) {
 
 	// a manager with a primary error should still run deferred routines.
 	var deferredRan bool
-	lifecycle.Go(ctx, func() error { return errors.New("primary error") })
-	lifecycle.Defer(ctx, func() error { deferredRan = true; return nil })
+	lifecycle.GoErr(ctx, func() error { return errors.New("primary error") })
+	lifecycle.Defer(ctx, func() { deferredRan = true })
 	err := lifecycle.Wait(ctx)
 	if err == nil {
 		t.Fatal("manager did not return primary routine error.")
@@ -158,11 +158,12 @@ func TestDeferredOnPrimaryError(t *testing.T) {
 func TestDeferredTimeout(t *testing.T) {
 	ctx := lifecycle.New(
 		context.Background(),
-		lifecycle.WithTimeout(10*time.Millisecond))
+		lifecycle.WithTimeout(10*time.Millisecond),
+	)
 
 	// a manager with a deferred function that takes longer than the configured
 	// lifecycle timeout should return with a timeout error.
-	lifecycle.Defer(ctx, func() error { time.Sleep(30 * time.Second); return nil })
+	lifecycle.Defer(ctx, func() { time.Sleep(30 * time.Second) })
 	err := lifecycle.Wait(ctx)
 	if err == nil {
 		t.Fatal("deferred timeout expected a timeout error at 10ms.")
@@ -175,12 +176,13 @@ func TestDeferredTimeout(t *testing.T) {
 func TestContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	ctx = lifecycle.New(ctx,
-		lifecycle.WithTimeout(6*time.Second))
+		lifecycle.WithTimeout(6*time.Second),
+	)
 
 	// a manger whose context is canceled should return before subroutines
 	// complete with a context cancelation error.
-	lifecycle.Go(ctx, func() error { time.Sleep(10 * time.Second); return nil })
-	lifecycle.Defer(ctx, func() error { time.Sleep(10 * time.Second); return nil })
+	lifecycle.Go(ctx, func() { time.Sleep(10 * time.Second) })
+	lifecycle.Defer(ctx, func() { time.Sleep(10 * time.Second) })
 	go func() {
 		time.Sleep(1 * time.Second)
 		cancel()
@@ -197,14 +199,15 @@ func TestContextCancel(t *testing.T) {
 func TestSignalCancels(t *testing.T) {
 	ctx := lifecycle.New(context.Background(),
 		lifecycle.WithTimeout(1*time.Second),
-		lifecycle.WithSignals(syscall.SIGUSR1)) // SIGUSR1 plays nicely with tests
+		lifecycle.WithSignals(syscall.SIGUSR1), // SIGUSR1 plays nicely with tests
+	)
 
 	// A long-running goroutine, when signaled, should invoke the deferred
 	// functions and wait up to timeout before interrupting the laggard.
 
 	deferredRan := int64(0)
-	lifecycle.Go(ctx, func() error { time.Sleep(1 * time.Minute); return nil })
-	lifecycle.Defer(ctx, func() error { atomic.StoreInt64(&deferredRan, 1); return nil })
+	lifecycle.Go(ctx, func() { time.Sleep(1 * time.Minute) })
+	lifecycle.Defer(ctx, func() { atomic.StoreInt64(&deferredRan, 1) })
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 		process, _ := os.FindProcess(syscall.Getpid())
@@ -223,8 +226,9 @@ func TestIgnoreSignals(t *testing.T) {
 	ctx := lifecycle.New(
 		context.Background(),
 		lifecycle.WithTimeout(1*time.Second),
-		lifecycle.WithSignals())
-	lifecycle.Defer(ctx, func() error { time.Sleep(1 * time.Minute); return nil })
+		lifecycle.WithSignals(),
+	)
+	lifecycle.Defer(ctx, func() { time.Sleep(1 * time.Minute) })
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 		process, _ := os.FindProcess(syscall.Getpid())
