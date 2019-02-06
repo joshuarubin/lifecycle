@@ -1,8 +1,0 @@
-[prune]
-  unused-packages = true
-  non-go = true
-  go-tests = true
-
-[[constraint]]
-  name = "golang.org/x/sync"
-  branch = "master"
