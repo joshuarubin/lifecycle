@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"zvelo.io/lifecycle"
+	"github.com/joshuarubin/lifecycle"
 )
 
 func TestEmptyLifecycle(t *testing.T) {
