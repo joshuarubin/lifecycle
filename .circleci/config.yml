@@ -1,5 +1,8 @@
 ---
-version: 2
+version: 2.1
+
+orbs:
+  codecov: codecov/codecov@1.0.4
 
 jobs:
   build:
@@ -8,11 +11,7 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Install Test Dependencies
+          name: Run Tests
           command: |
-            go get github.com/mattn/goveralls
-      - run:
-          name: Calculate unit test coverage
-          command: |
-            go test -v -cover -race -coverprofile=coverage.out ./...
-            goveralls -v -coverprofile=overalls.coverprofile -service circle-ci -repotoken ${COVERALLS_REPO_TOKEN} || true
+            go test -v -cover -race -coverprofile=coverage.txt -covermode=atomic ./...
+      - codecov/upload
