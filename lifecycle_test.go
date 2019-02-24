@@ -3,8 +3,10 @@ package lifecycle_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -225,7 +227,6 @@ func TestContextCancel(t *testing.T) {
 		case <-ctx.Done():
 		}
 	})
-	runtime.Gosched()
 	cancel()
 	err := lifecycle.Wait(ctx)
 	if err == nil {
@@ -259,14 +260,18 @@ func TestSignalCancels(t *testing.T) {
 	}()
 
 	err := lifecycle.Wait(ctx)
-	if _, ok := err.(lifecycle.ErrSignal); !ok {
+	if e, ok := err.(lifecycle.ErrSignal); ok {
+		if !strings.Contains(e.Error(), "caught signal") {
+			t.Error("unexpected error text")
+		}
+	} else {
 		t.Errorf("unexpected error on signal interrupt: %v", err)
 	}
 	if atomic.LoadInt64(&deferredRan) != 1 {
 		t.Error("signaled process did not run deferred func")
 	}
-	if dur := time.Since(start); dur > 12*time.Millisecond {
-		t.Errorf("func ran for more than 10ms: %v", dur)
+	if dur := time.Since(start); dur > 20*time.Millisecond {
+		t.Errorf("func ran for more than 20ms: %v", dur)
 	}
 }
 
@@ -293,4 +298,38 @@ func TestIgnoreSignals(t *testing.T) {
 	if time.Since(start) < timeout {
 		t.Fatalf("did not ignore signals")
 	}
+}
+
+func TestRecover(t *testing.T) {
+	ctx := lifecycle.New(context.Background())
+	err := fmt.Errorf("test panic")
+
+	lifecycle.Go(ctx, func() { panic(err) })
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("did not panic")
+		} else if r != err {
+			t.Error("unexpected panic")
+		}
+	}()
+
+	_ = lifecycle.Wait(ctx)
+}
+
+func TestDeferRecover(t *testing.T) {
+	ctx := lifecycle.New(context.Background())
+	err := fmt.Errorf("test panic")
+
+	lifecycle.Defer(ctx, func() { panic(err) })
+
+	defer func() {
+		if r := recover(); r == nil {
+			t.Error("did not panic")
+		} else if r != err {
+			t.Error("unexpected panic")
+		}
+	}()
+
+	_ = lifecycle.Wait(ctx)
 }

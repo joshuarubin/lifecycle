@@ -37,7 +37,7 @@ func getFunc(fn interface{}) func(context.Context) error {
 }
 
 type manager struct {
-	*errgroup.Group
+	group *errgroup.Group
 
 	timeout time.Duration
 	sigs    []os.Signal
@@ -46,7 +46,7 @@ type manager struct {
 	cancel   func()
 	gctx     context.Context
 	deferred []func() error
-	recover  func(interface{})
+	panic    chan interface{}
 }
 
 type contextKey struct{}
@@ -64,6 +64,7 @@ func fromContext(ctx context.Context) *manager {
 func New(ctx context.Context, opts ...Option) context.Context {
 	m := &manager{
 		deferred: []func() error{},
+		panic:    make(chan interface{}, 1),
 	}
 
 	ctx = context.WithValue(ctx, contextKey{}, m)
@@ -72,7 +73,7 @@ func New(ctx context.Context, opts ...Option) context.Context {
 	copy(m.sigs, defaultSignals)
 
 	m.ctx, m.cancel = context.WithCancel(ctx)
-	m.Group, m.gctx = errgroup.WithContext(context.Background())
+	m.group, m.gctx = errgroup.WithContext(context.Background())
 
 	for _, o := range opts {
 		o(m)
@@ -90,14 +91,11 @@ func funcCtxErr(ctx context.Context, fn interface{}) func() error {
 	f := getFunc(fn)
 
 	return func() error {
-		if m.recover != nil {
-			defer func() {
-				if r := recover(); r != nil {
-					m.recover(r)
-					panic(r)
-				}
-			}()
-		}
+		defer func() {
+			if r := recover(); r != nil {
+				m.panic <- r
+			}
+		}()
 		return f(ctx)
 	}
 }
@@ -117,7 +115,7 @@ func Go(ctx context.Context, f ...interface{}) {
 	m := fromContext(ctx)
 
 	for _, fn := range f {
-		m.Group.Go(funcCtxErr(ctx, fn))
+		m.group.Go(funcCtxErr(ctx, fn))
 	}
 }
 
@@ -200,6 +198,8 @@ func (m *manager) runPrimaryGroup() error {
 	case <-m.gctx.Done():
 		// the error from the gctx errgroup will be returned
 		// from errgroup.Wait() later in runDeferredGroupRoutines
+	case r := <-m.panic:
+		panic(r)
 	}
 	return nil
 }
@@ -218,12 +218,14 @@ func (m *manager) runDeferredGroup() error {
 		return ctx.Err()
 	case err := <-m.runDeferredGroupRoutines():
 		return err
+	case r := <-m.panic:
+		panic(r)
 	}
 }
 
 // A channel that receives any os signals registered to be received.
 // If not configured to receive signals, it will receive nothing.
-func (m *manager) signalReceived() chan os.Signal {
+func (m *manager) signalReceived() <-chan os.Signal {
 	sigCh := make(chan os.Signal, 1)
 	if len(m.sigs) > 0 {
 		signal.Notify(sigCh, m.sigs...)
@@ -232,16 +234,16 @@ func (m *manager) signalReceived() chan os.Signal {
 }
 
 // A channel that notifies of errors caused while waiting for subroutines to finish.
-func (m *manager) runPrimaryGroupRoutines() chan error {
+func (m *manager) runPrimaryGroupRoutines() <-chan error {
 	errs := make(chan error, 1)
-	go func() { errs <- m.Wait() }()
+	go func() { errs <- m.group.Wait() }()
 	return errs
 }
 
-func (m *manager) runDeferredGroupRoutines() chan error {
+func (m *manager) runDeferredGroupRoutines() <-chan error {
 	errs := make(chan error, 1)
 	dg := errgroup.Group{}
-	dg.Go(m.Wait) // Wait for the primary group as well
+	dg.Go(m.group.Wait) // Wait for the primary group as well
 	for _, f := range m.deferred {
 		dg.Go(f)
 	}
