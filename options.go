@@ -26,3 +26,12 @@ func WithSignals(val ...os.Signal) Option {
 		o.sigs = val
 	}
 }
+
+// WithRecover provides a function that will be called after a panic. It will be
+// passed the value returned by recover(). This provides a mechanism for panics
+// to be recorded somewhere. After calling fn, the value will be re-panicked.
+func WithRecover(fn func(interface{})) Option {
+	return func(o *manager) {
+		o.recover = fn
+	}
+}

@@ -13,29 +13,27 @@ import (
 
 var defaultSignals = []os.Signal{syscall.SIGINT, syscall.SIGTERM}
 
-// Done is used to indicate, asynchronously, when something is complete. It
-// is used as follows:
-//
-//	func Something(ctx context.Context) lifecycle.Done {
-//	 	done := make(chan struct{})
-//		go func() {
-//			// do something
-//			select {
-//			// other cases
-//			case <-ctx.Done():
-//				// shutdown cleanly
-//				close(done)
-//				return
-//			}
-//		}()
-//		return done
-//	}
-type Done <-chan struct{}
-
-// DoneFunc provides a function that returns when the done channel does, for
-// use with Go and Defer.
-func DoneFunc(done Done) func() {
-	return func() { <-done }
+func getFunc(fn interface{}) func(context.Context) error {
+	switch t := fn.(type) {
+	case func():
+		return func(context.Context) error {
+			t()
+			return nil
+		}
+	case func() error:
+		return func(context.Context) error {
+			return t()
+		}
+	case func(context.Context):
+		return func(ctx context.Context) error {
+			t(ctx)
+			return nil
+		}
+	case func(context.Context) error:
+		return t
+	default:
+		panic(fmt.Errorf("lifecycle.Func: unsupported func signature: %T", fn))
+	}
 }
 
 type manager struct {
@@ -48,13 +46,17 @@ type manager struct {
 	cancel   func()
 	gctx     context.Context
 	deferred []func() error
+	recover  func(interface{})
 }
 
 type contextKey struct{}
 
-func fromContext(ctx context.Context) (m *manager, ok bool) {
-	m, ok = ctx.Value(contextKey{}).(*manager)
-	return
+func fromContext(ctx context.Context) *manager {
+	m, ok := ctx.Value(contextKey{}).(*manager)
+	if !ok {
+		panic(ErrNoManager)
+	}
+	return m
 }
 
 // New returns a lifecycle manager with context derived from that
@@ -81,97 +83,88 @@ func New(ctx context.Context, opts ...Option) context.Context {
 
 // ErrNoManager is returned by Go(), Defer(), and Wait() if called and the
 // passed in context was not created with New()
-var ErrNoManager = fmt.Errorf("lifecycle manager not in context")
+var ErrNoManager = fmt.Errorf("lifecycle: manager not in context")
 
-func errFunc(fn func()) func() error {
+func funcCtxErr(ctx context.Context, fn interface{}) func() error {
+	m := fromContext(ctx)
+	f := getFunc(fn)
+
 	return func() error {
-		fn()
-		return nil
+		if m.recover != nil {
+			defer func() {
+				if r := recover(); r != nil {
+					m.recover(r)
+					panic(r)
+				}
+			}()
+		}
+		return f(ctx)
 	}
 }
 
-// Go run a function in a new goroutine and the first to return in error in this
-// way cancels the group; the error retained.
-func Go(ctx context.Context, f ...func()) error {
-	m, ok := fromContext(ctx)
-	if !ok {
-		return ErrNoManager
-	}
+// Go run a function in a new goroutine. If any Go or Defer func returns an
+// error, only the first one will be returned by Wait()
+//
+// The following signatures are acceptable for f:
+//
+//   func()
+//   func() error
+//   func(context.Context)
+//   func(context.Context) error
+//
+// Anything else passe in will result in a panic
+func Go(ctx context.Context, f ...interface{}) {
+	m := fromContext(ctx)
 
 	for _, fn := range f {
-		m.Group.Go(errFunc(fn))
+		m.Group.Go(funcCtxErr(ctx, fn))
 	}
-
-	return nil
-}
-
-// GoErr run a function in a new goroutine and the first to return in error in this
-// way cancels the group; the error retained.
-func GoErr(ctx context.Context, f ...func() error) error {
-	m, ok := fromContext(ctx)
-	if !ok {
-		return ErrNoManager
-	}
-
-	for _, fn := range f {
-		m.Group.Go(fn)
-	}
-
-	return nil
 }
 
 // Defer adds funcs that should be called after the Go funcs complete (either
-// clean or with errors) or a signal is received.
-func Defer(ctx context.Context, deferred ...func()) error {
-	m, ok := fromContext(ctx)
-	if !ok {
-		return ErrNoManager
-	}
+// clean or with errors) or a signal is received. If any Go or Defer func
+// returns an error, only the first one will be returned by Wait()
+//
+// The following signatures are acceptable for deferred:
+//
+//   func()
+//   func() error
+//   func(context.Context)
+//   func(context.Context) error
+//
+// Anything else passe in will result in a panic
+func Defer(ctx context.Context, deferred ...interface{}) {
+	m := fromContext(ctx)
 
 	for _, fn := range deferred {
-		m.deferred = append(m.deferred, errFunc(fn))
+		m.deferred = append(m.deferred, funcCtxErr(ctx, fn))
 	}
-
-	return nil
-}
-
-// DeferErr adds funcs that should be called after the Go funcs complete (either
-// clean or with errors) or a signal is received.
-func DeferErr(ctx context.Context, deferred ...func() error) error {
-	m, ok := fromContext(ctx)
-	if !ok {
-		return ErrNoManager
-	}
-
-	m.deferred = append(m.deferred, deferred...)
-
-	return nil
 }
 
 // Wait blocks until all go routines have been completed.
 //
-// First all goroutines registered with Go have to complete (either cleanly or
-// with an error).
+// All funcs registered with Go and Defer _will_ complete under every
+// circumstance except a panic
 //
-// Next, the funcs registered with Defer are executed.
+// Funcs passed to Defer begin (and the context returned by New() is canceled)
+// when any of:
 //
-// If a signal is received, e.g. SIGINT or SIGTERM, the context returned by
-// New() is canceled.
+//   - All funcs registered with Go complete successfully
+//   - Any func registered with Go returns an error
+//   - A signal is received (by default SIGINT or SIGTERM, but can be changed by
+//     WithSignals
 //
-// The goroutines registered with Go should stop and clean up when the context
-// returned by New() is canceled.
+// Funcs registered with Go should stop and clean up when the context
+// returned by New() is canceled. If the func accepts a context argument, it
+// will be passed the context returned by New().
 //
-// WithTimeout() can be used to set a maximum amount of time, from signal or
-// context cancellation, that Wait will wait before returning.
+// WithTimeout() can be used to set a maximum amount of time, starting with the
+// context returned by New() is canceled, that Wait will wait before returning.
 //
-// The error returned is the first one returned by any goroutines registered
-// with Go. If none of those return an error, then the error is the first one
-// returned by a goroutine registered with Defer.
+// The returned err is the first non-nil error returned by any func registered
+// with Go or Defer, otherwise nil.
 func Wait(ctx context.Context) error {
-	m, ok := fromContext(ctx)
-	if !ok {
-		return ErrNoManager
-	}
+	m := fromContext(ctx)
 
 	err := m.runPrimaryGroup()
 	m.cancel()
@@ -183,19 +176,30 @@ func Wait(ctx context.Context) error {
 	return m.runDeferredGroup()
 }
 
+// ErrSignal is returned by Wait if the reason it returned was because a signal
+// was caught
+type ErrSignal struct {
+	os.Signal
+}
+
+func (e ErrSignal) Error() string {
+	return fmt.Sprintf("lifecycle: caught signal: %v", e.Signal)
+}
+
 // runPrimaryGroup waits for all registered routines to
 // complete, returning on an error from any of them, or from
 // the receipt of a registered signal, or from a context cancelation.
 func (m *manager) runPrimaryGroup() error {
 	select {
-	case <-m.signalReceived():
+	case sig := <-m.signalReceived():
+		return ErrSignal{sig}
 	case err := <-m.runPrimaryGroupRoutines():
 		return err
 	case <-m.ctx.Done():
 		return m.ctx.Err()
 	case <-m.gctx.Done():
 		// the error from the gctx errgroup will be returned
-		// from errgroup.Wait() later in Handle()
+		// from errgroup.Wait() later in runDeferredGroupRoutines
 	}
 	return nil
 }
@@ -221,7 +225,9 @@ func (m *manager) runDeferredGroup() error {
 // If not configured to receive signals, it will receive nothing.
 func (m *manager) signalReceived() chan os.Signal {
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, m.sigs...)
+	if len(m.sigs) > 0 {
+		signal.Notify(sigCh, m.sigs...)
+	}
 	return sigCh
 }
 
