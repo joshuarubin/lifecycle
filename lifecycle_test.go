@@ -37,13 +37,6 @@ func testPanic(t *testing.T, fn func()) {
 	}
 }
 
-func TestInvalidFunc(t *testing.T) {
-	testPanic(t, func() {
-		ctx := lifecycle.New(context.Background())
-		lifecycle.Go(ctx, "not a func")
-	})
-}
-
 func TestBadContext(t *testing.T) {
 	testPanic(t, func() {
 		lifecycle.Go(context.Background(), func() {})
@@ -67,10 +60,7 @@ func TestSingleRoutine(t *testing.T) {
 	// A lifecycle manager with a single registered routine should immediately execute
 	// the routine without needing to call Wait.
 	var ran int64
-	lifecycle.Go(ctx, func(context.Context) error {
-		atomic.StoreInt64(&ran, 1)
-		return nil
-	})
+	lifecycle.Go(ctx, func() { atomic.StoreInt64(&ran, 1) })
 	runtime.Gosched()
 	if atomic.LoadInt64(&ran) != 1 {
 		t.Error("lifecycle manager did not immediately run registered routine.")
@@ -82,7 +72,7 @@ func TestPrimaryError(t *testing.T) {
 
 	// A manager with a single erroring registered routine should return that
 	// error on Wait
-	lifecycle.Go(ctx, func() error { return errors.New("errored") })
+	lifecycle.GoErr(ctx, func() error { return errors.New("errored") })
 	err := lifecycle.Wait(ctx)
 
 	if err == nil {
@@ -98,7 +88,7 @@ func TestMultiplePrimaryErrors(t *testing.T) {
 
 	// when multiple routines will error, the first error should be returned
 	// without waiting for the second routine to finish.
-	lifecycle.Go(ctx, func() error { return errors.New("error1") })
+	lifecycle.GoErr(ctx, func() error { return errors.New("error1") })
 	err := lifecycle.Wait(ctx)
 
 	if err == nil {
@@ -132,7 +122,7 @@ func TestSingleDeferredError(t *testing.T) {
 
 	// A manager with no primary routines and one deferred routine should
 	// execute the deferred routine on Wait and return its error.
-	lifecycle.Defer(ctx, func() error { return errors.New("deferred error") })
+	lifecycle.DeferErr(ctx, func() error { return errors.New("deferred error") })
 	err := lifecycle.Wait(ctx)
 	if err == nil {
 		t.Fatal("Manager with an erroring deferred expected error, but received none.")
@@ -147,8 +137,8 @@ func TestMultipleDeferredErrors(t *testing.T) {
 
 	// A manager with no primary routines and multiple deferred routines should
 	// execute the deferred routines, and return the first deferred error, not the last.
-	lifecycle.Defer(ctx, func() error { return errors.New("deferred error1") })
-	lifecycle.Defer(ctx, func() error {
+	lifecycle.DeferErr(ctx, func() error { return errors.New("deferred error1") })
+	lifecycle.DeferErr(ctx, func() error {
 		time.Sleep(10 * time.Millisecond)
 		return errors.New("deferred error2")
 	})
@@ -185,7 +175,7 @@ func TestDeferredOnPrimaryError(t *testing.T) {
 
 	// a manager with a primary error should still run deferred routines.
 	var deferredRan bool
-	lifecycle.Go(ctx, func() error { return errors.New("primary error") })
+	lifecycle.GoErr(ctx, func() error { return errors.New("primary error") })
 	lifecycle.Defer(ctx, func() { deferredRan = true })
 	err := lifecycle.Wait(ctx)
 	if err == nil {
@@ -221,7 +211,7 @@ func TestContextCancel(t *testing.T) {
 
 	// a manger whose context is canceled should return before subroutines
 	// complete with a context cancelation error.
-	lifecycle.Go(ctx, func(ctx context.Context) {
+	lifecycle.Go(ctx, func() {
 		select {
 		case <-time.After(10 * time.Second):
 		case <-ctx.Done():

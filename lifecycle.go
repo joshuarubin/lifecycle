@@ -13,29 +13,6 @@ import (
 
 var defaultSignals = []os.Signal{syscall.SIGINT, syscall.SIGTERM}
 
-func getFunc(fn interface{}) func(context.Context) error {
-	switch t := fn.(type) {
-	case func():
-		return func(context.Context) error {
-			t()
-			return nil
-		}
-	case func() error:
-		return func(context.Context) error {
-			return t()
-		}
-	case func(context.Context):
-		return func(ctx context.Context) error {
-			t(ctx)
-			return nil
-		}
-	case func(context.Context) error:
-		return t
-	default:
-		panic(fmt.Errorf("lifecycle.Func: unsupported func signature: %T", fn))
-	}
-}
-
 type manager struct {
 	group *errgroup.Group
 
@@ -86,9 +63,8 @@ func New(ctx context.Context, opts ...Option) context.Context {
 // passed in context was not created with New()
 var ErrNoManager = fmt.Errorf("lifecycle: manager not in context")
 
-func funcCtxErr(ctx context.Context, fn interface{}) func() error {
+func wrapFunc(ctx context.Context, fn func() error) func() error {
 	m := fromContext(ctx)
-	f := getFunc(fn)
 
 	return func() error {
 		defer func() {
@@ -96,46 +72,57 @@ func funcCtxErr(ctx context.Context, fn interface{}) func() error {
 				m.panic <- r
 			}
 		}()
-		return f(ctx)
+		return fn()
 	}
 }
 
-// Go run a function in a new goroutine. If any Go or Defer func returns an
-// error, only the first one will be returned by Wait()
-//
-// The following signatures are acceptable for f:
-//
-//   func()
-//   func() error
-//   func(context.Context)
-//   func(context.Context) error
-//
-// Anything else passe in will result in a panic
-func Go(ctx context.Context, f ...interface{}) {
+// Go run a function in a new goroutine
+func Go(ctx context.Context, f ...func()) {
+	m := fromContext(ctx)
+
+	for _, t := range f {
+		fn := t
+		m.group.Go(wrapFunc(ctx, func() error {
+			fn()
+			return nil
+		}))
+	}
+}
+
+// GoErr runs a function that returns an error in a new goroutine. If any GoErr
+// or DeferErr func returns an error, only the first one will be returned by
+// Wait()
+func GoErr(ctx context.Context, f ...func() error) {
 	m := fromContext(ctx)
 
 	for _, fn := range f {
-		m.group.Go(funcCtxErr(ctx, fn))
+		m.group.Go(wrapFunc(ctx, fn))
 	}
 }
 
 // Defer adds funcs that should be called after the Go funcs complete (either
-// clean or with errors) or a signal is received. If any Go or Defer func
-// returns an error, only the first one will be returned by Wait()
-//
-// The following signatures are acceptable for deferred:
-//
-//   func()
-//   func() error
-//   func(context.Context)
-//   func(context.Context) error
-//
-// Anything else passe in will result in a panic
-func Defer(ctx context.Context, deferred ...interface{}) {
+// clean or with errors) or a signal is received
+func Defer(ctx context.Context, deferred ...func()) {
+	m := fromContext(ctx)
+
+	for _, t := range deferred {
+		fn := t
+		m.deferred = append(m.deferred, wrapFunc(ctx, func() error {
+			fn()
+			return nil
+		}))
+	}
+}
+
+// DeferErr adds funcs, that return errors, that should be called after the Go
+// funcs complete (either clean or with errors) or a signal is received. If any
+// GoErr or DeferErr func returns an error, only the first one will be returned
+// by Wait()
+func DeferErr(ctx context.Context, deferred ...func() error) {
 	m := fromContext(ctx)
 
 	for _, fn := range deferred {
-		m.deferred = append(m.deferred, funcCtxErr(ctx, fn))
+		m.deferred = append(m.deferred, wrapFunc(ctx, fn))
 	}
 }
 

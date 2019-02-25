@@ -2,7 +2,9 @@ package lifecycle_test
 
 import (
 	"context"
+	"io"
 	"log"
+	"net/http"
 	"time"
 
 	"github.com/joshuarubin/lifecycle"
@@ -12,59 +14,38 @@ func Example() {
 	// At the top of your application
 	ctx := lifecycle.New(
 		context.Background(),
-		lifecycle.WithTimeout(30*time.Second),
+		lifecycle.WithTimeout(30*time.Second), // optional
 	)
 
-	funcErr := func() error {
-		// do stuff
-		return nil
+	helloHandler := func(w http.ResponseWriter, req *http.Request) {
+		_, _ = io.WriteString(w, "Hello, world!\n")
 	}
 
-	funcCtx := func(ctx context.Context) {
-		done := make(chan struct{})
-		go func() {
-			// do stuff
-			close(done)
-		}()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/hello", helloHandler)
 
-		select {
-		case <-done:
-		case <-ctx.Done():
+	srv := &http.Server{
+		Addr:    ":8080",
+		Handler: mux,
+	}
+
+	lifecycle.GoErr(ctx, func() error {
+		return srv.ListenAndServe()
+	})
+
+	lifecycle.DeferErr(ctx, func() error {
+		// use a background context because we already have a timeout and when
+		// Defer funcs run, ctx is necessarily canceled.
+		return srv.Shutdown(context.Background())
+	})
+
+	// Any panics in Go or Defer funcs will be passed to the goroutine that Wait
+	// runs in, so it is possible to handle them like this
+	defer func() {
+		if r := recover(); r != nil {
+			panic(r) // example, you probably want to do something else
 		}
-	}
-
-	funcCtxErr := func(ctx context.Context) error {
-		done := make(chan struct{})
-		go func() {
-			// do stuff
-			close(done)
-		}()
-
-		select {
-		case <-done:
-			return nil
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-
-	{ // Then you execute things that it will manage
-		lifecycle.Go(ctx, func() {
-			// do stuff
-		})
-		lifecycle.Go(ctx, funcErr)
-		lifecycle.Go(ctx, funcCtx)
-		lifecycle.Go(ctx, funcCtxErr)
-	}
-
-	{ // You can also add cleanup tasks that only get run on shutdown
-		lifecycle.Defer(ctx, func() {
-			// do cleanup stuff
-		})
-		lifecycle.Defer(ctx, funcErr)
-		lifecycle.Defer(ctx, funcCtx)
-		lifecycle.Defer(ctx, funcCtxErr)
-	}
+	}()
 
 	// Then at the end of main(), or run() or however your application operates
 	//
