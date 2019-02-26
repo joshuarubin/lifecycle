@@ -20,7 +20,7 @@ func WithTimeout(val time.Duration) Option {
 
 // WithSignals causes Handle to wait for Go funcs to finish, if WhenDone was
 // used or until a signal is received. The signals it will wait for can be
-// defined with WithSigs or will default to DefaultSignals
+// defined with WithSigs or will default to syscall.SIGINT and syscall.SIGTERM
 func WithSignals(val ...os.Signal) Option {
 	return func(o *manager) {
 		o.sigs = val

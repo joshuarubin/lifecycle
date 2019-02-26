@@ -31,7 +31,7 @@ type contextKey struct{}
 func fromContext(ctx context.Context) *manager {
 	m, ok := ctx.Value(contextKey{}).(*manager)
 	if !ok {
-		panic(ErrNoManager)
+		panic(fmt.Errorf("lifecycle: manager not in context"))
 	}
 	return m
 }
@@ -58,10 +58,6 @@ func New(ctx context.Context, opts ...Option) context.Context {
 
 	return m.ctx
 }
-
-// ErrNoManager is returned by Go(), Defer(), and Wait() if called and the
-// passed in context was not created with New()
-var ErrNoManager = fmt.Errorf("lifecycle: manager not in context")
 
 func wrapFunc(ctx context.Context, fn func() error) func() error {
 	m := fromContext(ctx)
