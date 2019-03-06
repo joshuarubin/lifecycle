@@ -40,9 +40,7 @@ srv := &http.Server{
     Handler: mux,
 }
 
-lifecycle.GoErr(ctx, func() error {
-    return srv.ListenAndServe()
-})
+lifecycle.GoErr(ctx, srv.ListenAndServe)
 
 lifecycle.DeferErr(ctx, func() error {
     // use a background context because we already have a timeout and when
