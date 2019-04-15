@@ -59,6 +59,12 @@ func New(ctx context.Context, opts ...Option) context.Context {
 	return m.ctx
 }
 
+// Exists returns true if the context has a lifecycle manager attached
+func Exists(ctx context.Context) bool {
+	_, ok := ctx.Value(contextKey{}).(*manager)
+	return ok
+}
+
 func wrapFunc(ctx context.Context, fn func() error) func() error {
 	m := fromContext(ctx)
 
