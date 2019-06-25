@@ -65,7 +65,7 @@ func Exists(ctx context.Context) bool {
 	return ok
 }
 
-func wrapFunc(ctx context.Context, fn func() error) func() error {
+func wrapCtxFunc(ctx context.Context, fn func(ctx context.Context) error) func() error {
 	m := fromContext(ctx)
 
 	return func() error {
@@ -74,8 +74,14 @@ func wrapFunc(ctx context.Context, fn func() error) func() error {
 				m.panic <- r
 			}
 		}()
-		return fn()
+		return fn(ctx)
 	}
+}
+
+func wrapFunc(ctx context.Context, fn func() error) func() error {
+	return wrapCtxFunc(ctx, func(context.Context) error {
+		return fn()
+	})
 }
 
 // Go run a function in a new goroutine
@@ -91,14 +97,25 @@ func Go(ctx context.Context, f ...func()) {
 	}
 }
 
-// GoErr runs a function that returns an error in a new goroutine. If any GoErr
-// or DeferErr func returns an error, only the first one will be returned by
-// Wait()
+// GoErr runs a function that returns an error in a new goroutine. If any GoErr,
+// GoCtxErr, DeferErr or DeferCtxErr func returns an error, only the first one
+// will be returned by Wait()
 func GoErr(ctx context.Context, f ...func() error) {
 	m := fromContext(ctx)
 
 	for _, fn := range f {
 		m.group.Go(wrapFunc(ctx, fn))
+	}
+}
+
+// GoCtxErr runs a function that takes a context and returns an error in a new
+// goroutine. If any GoErr, GoCtxErr, DeferErr or DeferCtxErr func returns an
+// error, only the first one will be returned by Wait()
+func GoCtxErr(ctx context.Context, f ...func(ctx context.Context) error) {
+	m := fromContext(ctx)
+
+	for _, fn := range f {
+		m.group.Go(wrapCtxFunc(ctx, fn))
 	}
 }
 
@@ -118,13 +135,25 @@ func Defer(ctx context.Context, deferred ...func()) {
 
 // DeferErr adds funcs, that return errors, that should be called after the Go
 // funcs complete (either clean or with errors) or a signal is received. If any
-// GoErr or DeferErr func returns an error, only the first one will be returned
-// by Wait()
+// GoErr, GoCtxErr, DeferErr or DeferCtxErr func returns an error, only the
+// first one will be returned by Wait()
 func DeferErr(ctx context.Context, deferred ...func() error) {
 	m := fromContext(ctx)
 
 	for _, fn := range deferred {
 		m.deferred = append(m.deferred, wrapFunc(ctx, fn))
+	}
+}
+
+// DeferCtxErr adds funcs, that take a context and return an error, that should
+// be called after the Go funcs complete (either clean or with errors) or a
+// signal is received. If any GoErr, GoCtxErr, DeferErr or DeferCtxErr func
+// returns an error, only the first one will be returned by Wait()
+func DeferCtxErr(ctx context.Context, deferred ...func(context.Context) error) {
+	m := fromContext(ctx)
+
+	for _, fn := range deferred {
+		m.deferred = append(m.deferred, wrapCtxFunc(ctx, fn))
 	}
 }
 
