@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -71,6 +72,7 @@ func wrapCtxFunc(ctx context.Context, fn func(ctx context.Context) error) func()
 	return func() error {
 		defer func() {
 			if r := recover(); r != nil {
+				debug.PrintStack()
 				m.panic <- r
 			}
 		}()
