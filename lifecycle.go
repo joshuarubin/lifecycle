@@ -91,6 +91,9 @@ func Go(ctx context.Context, f ...func()) {
 	m := fromContext(ctx)
 
 	for _, t := range f {
+		if t == nil {
+			continue
+		}
 		fn := t
 		m.group.Go(wrapFunc(ctx, func() error {
 			fn()
@@ -106,6 +109,9 @@ func GoErr(ctx context.Context, f ...func() error) {
 	m := fromContext(ctx)
 
 	for _, fn := range f {
+		if fn == nil {
+			continue
+		}
 		m.group.Go(wrapFunc(ctx, fn))
 	}
 }
@@ -117,6 +123,9 @@ func GoCtxErr(ctx context.Context, f ...func(ctx context.Context) error) {
 	m := fromContext(ctx)
 
 	for _, fn := range f {
+		if fn == nil {
+			continue
+		}
 		m.group.Go(wrapCtxFunc(ctx, fn))
 	}
 }
@@ -127,6 +136,9 @@ func Defer(ctx context.Context, deferred ...func()) {
 	m := fromContext(ctx)
 
 	for _, t := range deferred {
+		if t == nil {
+			continue
+		}
 		fn := t
 		m.deferred = append(m.deferred, wrapFunc(ctx, func() error {
 			fn()
@@ -143,6 +155,9 @@ func DeferErr(ctx context.Context, deferred ...func() error) {
 	m := fromContext(ctx)
 
 	for _, fn := range deferred {
+		if fn == nil {
+			continue
+		}
 		m.deferred = append(m.deferred, wrapFunc(ctx, fn))
 	}
 }
@@ -155,6 +170,9 @@ func DeferCtxErr(ctx context.Context, deferred ...func(context.Context) error) {
 	m := fromContext(ctx)
 
 	for _, fn := range deferred {
+		if fn == nil {
+			continue
+		}
 		m.deferred = append(m.deferred, wrapCtxFunc(ctx, fn))
 	}
 }
