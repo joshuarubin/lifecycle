@@ -279,14 +279,27 @@ func (m *manager) runPrimaryGroupRoutines() <-chan error {
 }
 
 func (m *manager) runDeferredGroupRoutines() <-chan error {
-	errs := make(chan error, 1)
-	dg := errgroup.Group{}
-	dg.Go(m.group.Wait) // Wait for the primary group as well
-	for _, f := range m.deferred {
-		dg.Go(f)
-	}
+	done := make(chan struct{})
+	var err error
 	go func() {
-		errs <- dg.Wait()
+		defer close(done)
+		for i := len(m.deferred) - 1; i >= 0; i-- {
+			if derr := m.deferred[i](); err == nil {
+				err = derr
+			}
+		}
 	}()
+
+	errs := make(chan error, 1)
+	go func() {
+		gerr := m.group.Wait()
+		<-done
+		if gerr != nil {
+			errs <- gerr
+		} else {
+			errs <- err
+		}
+	}()
+
 	return errs
 }

@@ -135,8 +135,10 @@ func TestSingleDeferredError(t *testing.T) {
 func TestMultipleDeferredErrors(t *testing.T) {
 	ctx := lifecycle.New(context.Background())
 
-	// A manager with no primary routines and multiple deferred routines should
-	// execute the deferred routines, and return the first deferred error, not the last.
+	// A manager with no primary routines and multiple deferred routines
+	// should execute the deferred routines in reverse order, and return
+	// the first executed deferred error, which might be the last deferred
+	// func
 	lifecycle.DeferErr(ctx, func() error { return errors.New("deferred error1") })
 	lifecycle.DeferErr(ctx, func() error {
 		time.Sleep(10 * time.Millisecond)
@@ -146,8 +148,8 @@ func TestMultipleDeferredErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("Manager with an erroring deferred expected error, but received none.")
 	}
-	if err.Error() != "deferred error1" {
-		t.Fatalf("expected \"deferred error1\" but got: %v", err)
+	if err.Error() != "deferred error2" {
+		t.Fatalf("expected \"deferred error2\" but got: %v", err)
 	}
 }
 
