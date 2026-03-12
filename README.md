@@ -8,14 +8,67 @@
 
 This package works with `context.Context` to ensure that applications don't quit before their goroutines do.
 
-The semantics work similarly to the `go` (`lifecycle.Go`) and `defer` (`lifecycle.Defer`) keywords as well as `sync.WaitGroup.Wait` (`lifecycle.Wait`). Additionally, there are `lifecycle.GoErr` and `lifecycle.DeferErr` which only differ in that they take funcs that return errors.
+## API
 
-`lifecycle.Wait` will block until one of the following happens:
+### Creating a lifecycle
 
-- all funcs registered with `Go` complete successfully then all funcs registered with `Defer` complete successfully
-- a func registered with `Go` returns an error, immediately canceling `ctx` and triggering `Defer` funcs to run. Once all `Go` and `Defer` funcs complete, `Wait` will return the error
-- a signal (by default `SIGINT` and `SIGTERM`, but configurable with `WithSignals`) is received, immediately canceling `ctx` and triggering `Defer` funcs to run. Once all `Go` and `Defer` funcs complete, `Wait` will return `ErrSignal`
-- a func registered with `Go` or `Defer` panics. the panic will be propagated to the goroutine that `Wait` runs in. there is no attempt, in case of a panic, to manage the state within the `lifecycle` package.
+```go
+ctx := lifecycle.New(ctx, opts...)
+```
+
+Returns a new context carrying a lifecycle manager. Options:
+
+- `lifecycle.WithTimeout(d)` — maximum time for the shutdown phase (deferred funcs + Go funcs responding to cancellation)
+- `lifecycle.WithSignals(sigs...)` — signals that trigger shutdown (default: `SIGINT`, `SIGTERM`). Pass no arguments to disable signal handling.
+
+### Checking for a lifecycle
+
+```go
+if lifecycle.Exists(ctx) { ... }
+```
+
+Returns true if the context carries a lifecycle manager.
+
+### Registering goroutines
+
+| Function | Signature | Notes |
+|---|---|---|
+| `Go` | `func()` | Fire-and-forget |
+| `GoCtx` | `func(ctx context.Context)` | Receives the lifecycle context |
+| `GoErr` | `func() error` | Error cancels the group |
+| `GoCtxErr` | `func(ctx context.Context) error` | Both context and error |
+
+All accept variadic arguments. Nil funcs are silently skipped. Must not be called after `Wait` returns.
+
+### Registering deferred funcs
+
+| Function | Signature | Notes |
+|---|---|---|
+| `Defer` | `func()` | Fire-and-forget cleanup |
+| `DeferCtx` | `func(ctx context.Context)` | Receives the lifecycle context |
+| `DeferErr` | `func() error` | Error is captured |
+| `DeferCtxErr` | `func(ctx context.Context) error` | Both context and error |
+
+Deferred funcs run sequentially in **LIFO order** (last registered, first executed), similar to Go's `defer` keyword. They may run concurrently with Go funcs that are still shutting down.
+
+**Context note:** `DeferCtx` and `DeferCtxErr` pass the lifecycle context, which will already be canceled when deferred funcs execute. However, context _values_ (trace IDs, loggers, etc.) remain accessible. For cleanup operations that need a live context (e.g., `srv.Shutdown`), use `DeferErr` with `context.Background()` instead.
+
+### Waiting
+
+```go
+err := lifecycle.Wait(ctx)
+```
+
+Blocks until all Go and Defer funcs complete. The shutdown phase begins when any of:
+
+- All Go funcs complete successfully
+- Any Go func returns an error
+- A signal is received
+- The parent context is canceled
+
+**Error priority** (highest to lowest): panic > signal > context cancellation > first Go error > first Defer error.
+
+**Timeout behavior:** When `WithTimeout` is set and the timeout fires, the currently executing deferred func will finish, but remaining deferred funcs in the queue are skipped.
 
 ## Example
 

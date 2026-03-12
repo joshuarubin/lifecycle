@@ -2,12 +2,12 @@
 version: 2.1
 
 orbs:
-  codecov: codecov/codecov@1.0.4
+  codecov: codecov/codecov@4.1.0
 
 executors:
   golang:
     docker:
-      - image: circleci/golang:latest
+      - image: cimg/go:1.25
 
 jobs:
   build:
@@ -21,7 +21,8 @@ jobs:
           name: Run Tests
           command: |
             go test -v -cover -race -coverprofile=coverage.txt -covermode=atomic ./...
-      - codecov/upload
+      - codecov/upload:
+          file: coverage.txt
       - save_cache:
           key: go-pkg-mod
           paths:
