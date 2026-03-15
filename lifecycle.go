@@ -32,8 +32,9 @@ type manager struct {
 	groupCtx context.Context
 	mu       sync.Mutex
 	deferred []func() error
-	panic    chan any
-	waited   atomic.Bool
+	panic      chan any
+	waitCalled atomic.Bool
+	waited     atomic.Bool
 }
 
 type contextKey struct{}
@@ -344,11 +345,12 @@ func DeferCtxErr(ctx context.Context, deferred ...func(context.Context) error) {
 func Wait(ctx context.Context) error {
 	m := fromContext(ctx)
 
-	if !m.waited.CompareAndSwap(false, true) {
+	if !m.waitCalled.CompareAndSwap(false, true) {
 		panic(fmt.Errorf("lifecycle: Wait called more than once"))
 	}
 
 	primaryErr := m.runPrimaryGroup()
+	m.waited.Store(true)
 	m.cancel()
 	groupErr, deferErr := m.runDeferredGroup()
 	// When runPrimaryGroup returned nil (the groupCtx.Done shortcut),

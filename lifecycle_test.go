@@ -789,6 +789,37 @@ func TestMultiplePanics(t *testing.T) {
 	}
 }
 
+func TestRegistrationDuringGoFunc(t *testing.T) {
+	ctx := lifecycle.New(context.Background())
+
+	var deferredRan, childRan atomic.Int64
+
+	lifecycle.GoCtxErr(ctx, func(ctx context.Context) error {
+		// Register a deferred func while Wait is blocked in runPrimaryGroup.
+		lifecycle.DeferErr(ctx, func() error {
+			deferredRan.Store(1)
+			return nil
+		})
+		// Launch a child goroutine while Wait is blocked in runPrimaryGroup.
+		lifecycle.GoCtxErr(ctx, func(ctx context.Context) error {
+			childRan.Store(1)
+			return nil
+		})
+		return nil
+	})
+
+	err := lifecycle.Wait(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if deferredRan.Load() != 1 {
+		t.Error("deferred func registered during Go func did not run")
+	}
+	if childRan.Load() != 1 {
+		t.Error("child goroutine registered during Go func did not run")
+	}
+}
+
 func TestPrimaryAndDeferredErrors(t *testing.T) {
 	ctx := lifecycle.New(context.Background())
 
